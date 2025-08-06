@@ -40,8 +40,8 @@
 
 #### 1. Клонирование репозитория
 ```bash
-git clone https://github.com/yourusername/ozon-ads-bot.git
-cd ozon-ads-bot
+git clone https://github.com/DArkadich/Ozon_ads.git
+cd Ozon_ads
 ```
 
 #### 2. Настройка конфигурации
