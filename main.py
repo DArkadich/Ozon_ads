@@ -324,18 +324,54 @@ def schedule():
         else:
             click.echo("   • Автооптимизация: отключена")
         
-        click.echo("\nНажмите Ctrl+C для остановки")
+        click.echo("\nПланировщик работает в фоновом режиме")
+        click.echo("Для остановки используйте docker-compose down")
         
         # Keep running
         try:
+            import time
             while True:
-                asyncio.sleep(1)
+                time.sleep(60)  # Check every minute
         except KeyboardInterrupt:
             click.echo("\n🛑 Остановка планировщика...")
             bot.scheduler.stop()
     
     except Exception as e:
         click.echo(f"❌ Ошибка планировщика: {str(e)}")
+
+
+@cli.command()
+def daemon():
+    """Запуск в daemon режиме (планировщик + telegram бот)."""
+    try:
+        bot = OzonAdsBot()
+        
+        click.echo("🤖 Запуск Ozon Ads Bot в daemon режиме...")
+        
+        # Start scheduler
+        bot.start_scheduler()
+        click.echo("📅 Планировщик запущен")
+        
+        # Start telegram bot if configured
+        if settings.telegram_bot_token:
+            click.echo("🤖 Запуск Telegram бота...")
+            bot.start_telegram_bot()  # This will block
+        else:
+            click.echo("⚠️ Telegram бот не настроен, работает только планировщик")
+            
+            # Keep running for scheduler only
+            try:
+                import time
+                while True:
+                    time.sleep(60)
+            except KeyboardInterrupt:
+                click.echo("\n🛑 Остановка daemon...")
+                bot.scheduler.stop()
+    
+    except KeyboardInterrupt:
+        click.echo("\n🛑 Остановка daemon...")
+    except Exception as e:
+        click.echo(f"❌ Ошибка daemon: {str(e)}")
 
 
 @cli.command()

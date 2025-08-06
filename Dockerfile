@@ -60,5 +60,5 @@ USER ozonbot
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from config import settings; print('Health OK')" || exit 1
 
-# Default command
-CMD ["python", "main.py", "interactive"]
+# Default command - start in daemon mode
+CMD ["python", "main.py", "daemon"]
