@@ -13,9 +13,9 @@ services:
     
     # Volumes for persistent data
     volumes:
-      - ./logs:/app/logs
-      - ./reports:/app/reports
-      - ./data:/app/data  # For any additional data files
+      - ./logs:/app/logs:rw
+      - ./reports:/app/reports:rw
+      - ./data:/app/data:rw  # For any additional data files
     
     # Network configuration
     networks:

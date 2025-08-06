@@ -49,9 +49,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY . .
 
-# Create necessary directories
+# Create necessary directories and fix permissions
 RUN mkdir -p logs reports && \
-    chown -R ozonbot:ozonbot /app
+    chmod 755 logs reports && \
+    chown -R ozonbot:ozonbot /app && \
+    chmod -R 755 /app
 
 # Switch to non-root user
 USER ozonbot

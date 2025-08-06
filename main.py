@@ -181,7 +181,12 @@ def cli(log_level):
     """Ozon Ads Bot - автоматизация рекламных кампаний на Ozon."""
     logger.remove()
     logger.add(sys.stdout, level=log_level)
-    logger.add("logs/ozon_ads_bot.log", rotation="1 day", retention="30 days", level=log_level)
+    
+    # Try to add file logging, but don't fail if permissions are wrong
+    try:
+        logger.add("logs/ozon_ads_bot.log", rotation="1 day", retention="30 days", level=log_level)
+    except (OSError, PermissionError) as e:
+        logger.warning(f"Cannot create log file: {e}. Continuing with stdout logging only.")
 
 
 @cli.command()
@@ -466,7 +471,16 @@ def interactive():
 
 
 if __name__ == '__main__':
-    # Create logs directory
-    os.makedirs('logs', exist_ok=True)
+    # Create logs directory with proper permissions
+    try:
+        os.makedirs('logs', exist_ok=True)
+        # Test write permissions
+        test_file = 'logs/.test'
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except (OSError, PermissionError) as e:
+        print(f"Warning: Cannot access logs directory: {e}")
+        print("Logging will be disabled for file output")
     
     cli()
