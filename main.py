@@ -183,10 +183,13 @@ def cli(log_level):
     logger.add(sys.stdout, level=log_level)
     
     # Try to add file logging, but don't fail if permissions are wrong
-    try:
-        logger.add("logs/ozon_ads_bot.log", rotation="1 day", retention="30 days", level=log_level)
-    except (OSError, PermissionError) as e:
-        logger.warning(f"Cannot create log file: {e}. Continuing with stdout logging only.")
+    if not os.environ.get('DISABLE_FILE_LOGGING'):
+        try:
+            logger.add("logs/ozon_ads_bot.log", rotation="1 day", retention="30 days", level=log_level)
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Cannot create log file: {e}. Continuing with stdout logging only.")
+    else:
+        logger.info("File logging disabled due to permission issues")
 
 
 @cli.command()
@@ -358,7 +361,7 @@ def daemon():
         click.echo("📅 Планировщик запущен")
         
         # Start telegram bot if configured
-        if settings.telegram_bot_token:
+        if settings.telegram_bot_token and settings.telegram_bot_token.strip():
             click.echo("🤖 Запуск Telegram бота...")
             bot.start_telegram_bot()  # This will block
         else:
@@ -482,5 +485,7 @@ if __name__ == '__main__':
     except (OSError, PermissionError) as e:
         print(f"Warning: Cannot access logs directory: {e}")
         print("Logging will be disabled for file output")
+        # Set environment variable to disable file logging
+        os.environ['DISABLE_FILE_LOGGING'] = '1'
     
     cli()
