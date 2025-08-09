@@ -356,9 +356,13 @@ def daemon():
         
         click.echo("🤖 Запуск Ozon Ads Bot в daemon режиме...")
         
-        # Start scheduler
-        bot.start_scheduler()
-        click.echo("📅 Планировщик запущен")
+        # Start scheduler (if available)
+        try:
+            bot.start_scheduler()
+            click.echo("📅 Планировщик запущен")
+        except Exception as e:
+            click.echo(f"⚠️ Планировщик не запущен: {e}")
+            click.echo("Продолжаем без планировщика...")
         
         # Start telegram bot if configured
         if settings.telegram_bot_token and settings.telegram_bot_token.strip():
@@ -370,16 +374,21 @@ def daemon():
             # Keep running for scheduler only
             try:
                 import time
+                click.echo("🔄 Daemon работает в фоновом режиме...")
+                click.echo("Нажмите Ctrl+C для остановки")
                 while True:
                     time.sleep(60)
             except KeyboardInterrupt:
                 click.echo("\n🛑 Остановка daemon...")
-                bot.scheduler.stop()
+                if hasattr(bot.scheduler, 'is_running') and bot.scheduler.is_running:
+                    bot.scheduler.stop()
     
     except KeyboardInterrupt:
         click.echo("\n🛑 Остановка daemon...")
     except Exception as e:
         click.echo(f"❌ Ошибка daemon: {str(e)}")
+        import traceback
+        click.echo(f"Детали ошибки: {traceback.format_exc()}")
 
 
 @cli.command()

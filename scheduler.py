@@ -2,9 +2,17 @@
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable
 import asyncio
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+import inspect
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
+    ASYNC_AVAILABLE = True
+except ImportError:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
+    ASYNC_AVAILABLE = False
 from loguru import logger
 from config import settings
 
@@ -14,7 +22,14 @@ class CampaignScheduler:
     
     def __init__(self, ozon_client=None, analyzer=None, keyword_manager=None, report_generator=None):
         """Initialize scheduler with required components."""
-        self.scheduler = AsyncIOScheduler()
+        # Always use BackgroundScheduler for simplicity
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            self.scheduler = BackgroundScheduler()
+        except ImportError:
+            logger.warning("APScheduler not available, scheduler disabled")
+            self.scheduler = None
+        
         self.ozon_client = ozon_client
         self.analyzer = analyzer
         self.keyword_manager = keyword_manager
@@ -36,43 +51,69 @@ class CampaignScheduler:
     
     def start(self):
         """Start the scheduler."""
-        if not self.is_running:
+        if not self.is_running and self.scheduler is not None:
             logger.info("Starting campaign scheduler")
-            self.scheduler.start()
-            self.is_running = True
-            
-            # Schedule default tasks
-            self._schedule_default_tasks()
+            try:
+                self.scheduler.start()
+                self.is_running = True
+                
+                # Schedule default tasks
+                self._schedule_default_tasks()
+                logger.info("Scheduler started successfully")
+            except Exception as e:
+                logger.error(f"Failed to start scheduler: {e}")
+                self.is_running = False
+        elif self.scheduler is None:
+            logger.warning("Scheduler not available")
+            self.is_running = False
     
     def stop(self):
         """Stop the scheduler."""
-        if self.is_running:
+        if self.is_running and self.scheduler is not None:
             logger.info("Stopping campaign scheduler")
-            self.scheduler.shutdown()
-            self.is_running = False
+            try:
+                self.scheduler.shutdown()
+            except Exception as e:
+                logger.error(f"Error stopping scheduler: {e}")
+            finally:
+                self.is_running = False
     
     def _schedule_default_tasks(self):
         """Schedule default recurring tasks."""
-        # Daily analysis at 9 AM
-        self.schedule_daily_analysis(hour=9, minute=0)
-        
-        # Weekly report on Mondays at 10 AM
-        self.schedule_weekly_report(day_of_week=0, hour=10, minute=0)
-        
-        # Hourly monitoring during business hours
-        self.schedule_monitoring(interval_hours=1)
+        if self.scheduler is None:
+            logger.warning("Cannot schedule tasks - scheduler not available")
+            return
+            
+        try:
+            # Daily analysis at 9 AM
+            self.schedule_daily_analysis(hour=9, minute=0)
+            
+            # Weekly report on Mondays at 10 AM
+            self.schedule_weekly_report(day_of_week=0, hour=10, minute=0)
+            
+            # Hourly monitoring during business hours
+            self.schedule_monitoring(interval_hours=1)
+        except Exception as e:
+            logger.error(f"Failed to schedule default tasks: {e}")
     
     def schedule_daily_analysis(self, hour: int = 9, minute: int = 0):
         """Schedule daily campaign analysis."""
+        if self.scheduler is None:
+            logger.warning("Cannot schedule daily analysis - scheduler not available")
+            return
+            
         logger.info(f"Scheduling daily analysis at {hour:02d}:{minute:02d}")
         
-        self.scheduler.add_job(
-            self._run_daily_analysis,
-            trigger=CronTrigger(hour=hour, minute=minute),
-            id='daily_analysis',
-            name='Daily Campaign Analysis',
-            replace_existing=True
-        )
+        try:
+            self.scheduler.add_job(
+                self._run_daily_analysis,
+                trigger=CronTrigger(hour=hour, minute=minute),
+                id='daily_analysis',
+                name='Daily Campaign Analysis',
+                replace_existing=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to schedule daily analysis: {e}")
     
     def schedule_weekly_report(self, day_of_week: int = 0, hour: int = 10, minute: int = 0):
         """Schedule weekly report generation (0=Monday, 6=Sunday)."""
@@ -114,8 +155,19 @@ class CampaignScheduler:
             replace_existing=True
         )
     
-    async def _run_daily_analysis(self):
-        """Run daily campaign analysis."""
+    def _run_coro(self, coro):
+        """Safely run a coroutine in its own event loop."""
+        try:
+            asyncio.run(coro)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(coro)
+            finally:
+                loop.close()
+
+    def _run_daily_analysis(self):
+        """Run daily campaign analysis (synchronous wrapper)."""
         logger.info("Running scheduled daily analysis")
         
         try:
@@ -151,12 +203,16 @@ class CampaignScheduler:
                 # Check for critical issues
                 critical_issues = [k for k in analysis if k.get('priority', 0) >= 90]
                 if critical_issues:
-                    await self._handle_critical_issues(campaign_id, critical_issues)
+                    # Handle critical issues (callbacks may be async)
+                    self._handle_critical_issues(campaign_id, critical_issues)
             
             # Trigger callbacks
             for callback in self.callbacks['on_analysis_complete']:
                 try:
-                    await callback(results)
+                    if inspect.iscoroutinefunction(callback):
+                        self._run_coro(callback(results))
+                    else:
+                        callback(results)
                 except Exception as e:
                     logger.error(f"Callback error: {e}")
             
@@ -165,8 +221,8 @@ class CampaignScheduler:
         except Exception as e:
             logger.error(f"Daily analysis failed: {e}")
     
-    async def _run_weekly_report(self):
-        """Generate weekly reports."""
+    def _run_weekly_report(self):
+        """Generate weekly reports (synchronous wrapper)."""
         logger.info("Running scheduled weekly report generation")
         
         try:
@@ -204,7 +260,10 @@ class CampaignScheduler:
             # Trigger callbacks
             for callback in self.callbacks['on_report_generated']:
                 try:
-                    await callback(reports)
+                    if inspect.iscoroutinefunction(callback):
+                        self._run_coro(callback(reports))
+                    else:
+                        callback(reports)
                 except Exception as e:
                     logger.error(f"Report callback error: {e}")
             
@@ -213,8 +272,8 @@ class CampaignScheduler:
         except Exception as e:
             logger.error(f"Weekly report generation failed: {e}")
     
-    async def _run_monitoring(self):
-        """Run campaign monitoring."""
+    def _run_monitoring(self):
+        """Run campaign monitoring (synchronous wrapper)."""
         logger.info("Running scheduled monitoring")
         
         try:
@@ -255,8 +314,8 @@ class CampaignScheduler:
         except Exception as e:
             logger.error(f"Monitoring failed: {e}")
     
-    async def _run_optimization(self):
-        """Run automated optimization."""
+    def _run_optimization(self):
+        """Run automated optimization (synchronous wrapper)."""
         logger.info("Running scheduled optimization")
         
         if not settings.auto_optimization_enabled:
@@ -315,7 +374,10 @@ class CampaignScheduler:
             # Trigger callbacks
             for callback in self.callbacks['on_optimization_complete']:
                 try:
-                    await callback(optimization_results)
+                    if inspect.iscoroutinefunction(callback):
+                        self._run_coro(callback(optimization_results))
+                    else:
+                        callback(optimization_results)
                 except Exception as e:
                     logger.error(f"Optimization callback error: {e}")
             
@@ -325,14 +387,17 @@ class CampaignScheduler:
         except Exception as e:
             logger.error(f"Optimization failed: {e}")
     
-    async def _handle_critical_issues(self, campaign_id: str, critical_issues: List[Dict]):
-        """Handle critical issues found during analysis."""
+    def _handle_critical_issues(self, campaign_id: str, critical_issues: List[Dict]):
+        """Handle critical issues found during analysis (sync)."""
         logger.warning(f"Found {len(critical_issues)} critical issues in campaign {campaign_id}")
         
         # Trigger critical issue callbacks
         for callback in self.callbacks['on_critical_issue']:
             try:
-                await callback(campaign_id, critical_issues)
+                if inspect.iscoroutinefunction(callback):
+                    self._run_coro(callback(campaign_id, critical_issues))
+                else:
+                    callback(campaign_id, critical_issues)
             except Exception as e:
                 logger.error(f"Critical issue callback error: {e}")
     
