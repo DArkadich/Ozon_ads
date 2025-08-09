@@ -19,7 +19,13 @@ class OzonAPIClient:
         """Initialize Ozon API client."""
         self.client_id = client_id or settings.ozon_client_id
         self.api_key = api_key or settings.ozon_api_key
-        self.base_url = "https://api-seller.ozon.ru"
+        # Попробуем несколько вариантов базовых URL
+        self.base_urls = [
+            "https://api-seller.ozon.ru",
+            "https://api.ozon.ru",
+            "https://performance.ozon.ru/api"
+        ]
+        self.base_url = self.base_urls[0]  # По умолчанию
         self.session = requests.Session()
         self.session.headers.update({
             "Client-Id": self.client_id,
@@ -28,28 +34,58 @@ class OzonAPIClient:
         })
     
     def _make_request(self, method: str, endpoint: str, data: Dict = None) -> Dict:
-        """Make HTTP request to Ozon API."""
-        url = f"{self.base_url}{endpoint}"
+        """Make HTTP request to Ozon API with automatic fallback to alternative URLs."""
+        for base_url in self.base_urls:
+            url = f"{base_url}{endpoint}"
+            try:
+                logger.info(f"Trying API request to: {url}")
+                if method.upper() == "GET":
+                    response = self.session.get(url, params=data)
+                else:
+                    response = self.session.request(method, url, json=data)
+                
+                response.raise_for_status()
+                # Если успешно, обновляем текущий базовый URL
+                self.base_url = base_url
+                logger.info(f"Successfully using base URL: {base_url}")
+                return response.json()
+                
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"API request failed for {base_url}: {e}")
+                continue
         
-        try:
-            if method.upper() == "GET":
-                response = self.session.get(url, params=data)
-            else:
-                response = self.session.request(method, url, json=data)
-            
-            response.raise_for_status()
-            return response.json()
-        
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
-            raise OzonAPIError(f"API request failed: {e}")
+        # Если все URL не работают
+        raise OzonAPIError(f"All API endpoints failed for endpoint: {endpoint}")
     
     def get_all_campaigns(self) -> List[Dict]:
         """Get all advertising campaigns."""
         logger.info("Fetching all campaigns")
         
         try:
-            response = self._make_request("POST", "/v1/performance/campaign/list", {})
+            # Попробуем несколько вариантов API endpoints
+            endpoints = [
+                "/v2/performance/campaign/list",
+                "/v1/performance/campaign/list", 
+                "/v1/campaign/list",
+                "/v2/campaign/list"
+            ]
+            
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"Trying endpoint: {endpoint}")
+                    response = self._make_request("POST", endpoint, {})
+                    campaigns = response.get("result", {}).get("campaigns", [])
+                    
+                    if campaigns:
+                        logger.info(f"Found {len(campaigns)} campaigns using {endpoint}")
+                        return campaigns
+                except Exception as e:
+                    logger.warning(f"Endpoint {endpoint} failed: {e}")
+                    continue
+            
+            # Если все endpoints не работают, попробуем базовый endpoint
+            logger.info("Trying base campaign endpoint")
+            response = self._make_request("POST", "/v1/campaign/list", {})
             campaigns = response.get("result", {}).get("campaigns", [])
             
             logger.info(f"Found {len(campaigns)} campaigns")
@@ -71,7 +107,26 @@ class OzonAPIClient:
         }
         
         try:
-            response = self._make_request("POST", "/v1/performance/campaign/statistics", data)
+            # Попробуем несколько вариантов API endpoints для статистики
+            endpoints = [
+                "/v2/performance/campaign/statistics",
+                "/v1/performance/campaign/statistics",
+                "/v1/campaign/statistics",
+                "/v2/campaign/statistics"
+            ]
+            
+            response = None
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"Trying statistics endpoint: {endpoint}")
+                    response = self._make_request("POST", endpoint, data)
+                    break
+                except Exception as e:
+                    logger.warning(f"Statistics endpoint {endpoint} failed: {e}")
+                    continue
+            
+            if not response:
+                raise Exception("All statistics endpoints failed")
             stats = response.get("result", {})
             
             if not stats:
@@ -115,7 +170,27 @@ class OzonAPIClient:
         try:
             # Get keywords list
             data = {"campaignId": int(campaign_id)}
-            response = self._make_request("POST", "/v1/performance/keyword/list", data)
+            
+            # Попробуем несколько вариантов API endpoints для ключевых слов
+            endpoints = [
+                "/v2/performance/keyword/list",
+                "/v1/performance/keyword/list",
+                "/v1/keyword/list",
+                "/v2/keyword/list"
+            ]
+            
+            response = None
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"Trying keyword endpoint: {endpoint}")
+                    response = self._make_request("POST", endpoint, data)
+                    break
+                except Exception as e:
+                    logger.warning(f"Keyword endpoint {endpoint} failed: {e}")
+                    continue
+            
+            if not response:
+                raise Exception("All keyword endpoints failed")
             keywords = response.get("result", {}).get("keywords", [])
             
             logger.info(f"Found {len(keywords)} keywords for campaign {campaign_id}")
