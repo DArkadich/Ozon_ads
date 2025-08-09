@@ -213,6 +213,40 @@ def status():
 
 
 @cli.command()
+def test_api():
+    """Тестировать API endpoints для поиска работающих."""
+    try:
+        bot = OzonAdsBot()
+        
+        click.echo("🧪 Тестирование API endpoints...")
+        click.echo("Это может занять некоторое время...")
+        
+        results = bot.ozon_client.test_api_connection()
+        
+        working_endpoints = [ep for ep, works in results.items() if works]
+        
+        if working_endpoints:
+            click.echo(f"✅ Найдено {len(working_endpoints)} работающих endpoints:")
+            for endpoint in working_endpoints:
+                click.echo(f"  • {endpoint}")
+        else:
+            click.echo("❌ Работающие endpoints не найдены")
+            click.echo("Возможные причины:")
+            click.echo("  • Неправильные API credentials")
+            click.echo("  • API endpoints изменились")
+            click.echo("  • Нет доступа к рекламным кампаниям")
+        
+        click.echo(f"\n📊 Результаты тестирования:")
+        for endpoint, works in results.items():
+            status = "✅" if works else "❌"
+            click.echo(f"  {status} {endpoint}")
+    
+    except Exception as e:
+        click.echo(f"❌ Ошибка тестирования API: {str(e)}")
+        logger.error(f"API test failed: {e}")
+
+
+@cli.command()
 @click.argument('campaign_id')
 @click.option('--days', default=7, help='Период анализа в днях')
 def analyze(campaign_id, days):

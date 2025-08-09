@@ -23,7 +23,12 @@ class OzonAPIClient:
         self.base_urls = [
             "https://api-seller.ozon.ru",
             "https://api.ozon.ru",
-            "https://performance.ozon.ru/api"
+            "https://performance.ozon.ru/api",
+            "https://api-seller.ozon.ru/v1",
+            "https://api-seller.ozon.ru/v2",
+            "https://api-seller.ozon.ru/v3",
+            "https://performance.ozon.ru",
+            "https://ads.ozon.ru/api"
         ]
         self.base_url = self.base_urls[0]  # По умолчанию
         self.session = requests.Session()
@@ -62,12 +67,20 @@ class OzonAPIClient:
         logger.info("Fetching all campaigns")
         
         try:
-            # Попробуем несколько вариантов API endpoints
+            # Попробуем несколько вариантов API endpoints (включая современные)
             endpoints = [
+                "/v3/performance/campaign/list",  # Новейший API
                 "/v2/performance/campaign/list",
                 "/v1/performance/campaign/list", 
+                "/v3/campaign/list",              # Новейший базовый API
+                "/v2/campaign/list",
                 "/v1/campaign/list",
-                "/v2/campaign/list"
+                "/v1/performance/campaigns",      # Альтернативный endpoint
+                "/v2/performance/campaigns",
+                "/v3/performance/campaigns",
+                "/v1/campaigns",                  # Простой endpoint
+                "/v2/campaigns",
+                "/v3/campaigns"
             ]
             
             for endpoint in endpoints:
@@ -107,12 +120,20 @@ class OzonAPIClient:
         }
         
         try:
-            # Попробуем несколько вариантов API endpoints для статистики
+            # Попробуем несколько вариантов API endpoints для статистики (включая современные)
             endpoints = [
+                "/v3/performance/campaign/statistics",  # Новейший API
                 "/v2/performance/campaign/statistics",
                 "/v1/performance/campaign/statistics",
+                "/v3/campaign/statistics",              # Новейший базовый API
+                "/v2/campaign/statistics",
                 "/v1/campaign/statistics",
-                "/v2/campaign/statistics"
+                "/v1/performance/campaigns/stats",      # Альтернативный endpoint
+                "/v2/performance/campaigns/stats",
+                "/v3/performance/campaigns/stats",
+                "/v1/campaigns/stats",                  # Простой endpoint
+                "/v2/campaigns/stats",
+                "/v3/campaigns/stats"
             ]
             
             response = None
@@ -171,12 +192,20 @@ class OzonAPIClient:
             # Get keywords list
             data = {"campaignId": int(campaign_id)}
             
-            # Попробуем несколько вариантов API endpoints для ключевых слов
+            # Попробуем несколько вариантов API endpoints для ключевых слов (включая современные)
             endpoints = [
+                "/v3/performance/keyword/list",  # Новейший API
                 "/v2/performance/keyword/list",
                 "/v1/performance/keyword/list",
+                "/v3/keyword/list",              # Новейший базовый API
+                "/v2/keyword/list",
                 "/v1/keyword/list",
-                "/v2/keyword/list"
+                "/v1/performance/keywords",      # Альтернативный endpoint
+                "/v2/performance/keywords",
+                "/v3/performance/keywords",
+                "/v1/keywords",                  # Простой endpoint
+                "/v2/keywords",
+                "/v3/keywords"
             ]
             
             response = None
@@ -323,3 +352,42 @@ class OzonAPIClient:
         except Exception as e:
             logger.error(f"Failed to get product info: {e}")
             return {}
+    
+    def test_api_connection(self) -> Dict[str, bool]:
+        """Test API connection with different endpoints to find working ones."""
+        logger.info("Testing API connection with different endpoints")
+        
+        test_endpoints = [
+            "/v1/performance/campaign/list",
+            "/v2/performance/campaign/list", 
+            "/v3/performance/campaign/list",
+            "/v1/campaign/list",
+            "/v2/campaign/list",
+            "/v3/campaign/list",
+            "/v1/campaigns",
+            "/v2/campaigns",
+            "/v3/campaigns"
+        ]
+        
+        results = {}
+        
+        for endpoint in test_endpoints:
+            for base_url in self.base_urls:
+                url = f"{base_url}{endpoint}"
+                try:
+                    logger.info(f"Testing: {url}")
+                    response = self.session.post(url, json={}, headers=self.session.headers)
+                    if response.status_code == 200:
+                        results[endpoint] = True
+                        logger.info(f"✅ Working endpoint: {endpoint} with {base_url}")
+                        break
+                    else:
+                        logger.warning(f"❌ {endpoint} failed with {base_url}: {response.status_code}")
+                except Exception as e:
+                    logger.warning(f"❌ {endpoint} failed with {base_url}: {e}")
+                    continue
+        
+        working_endpoints = [ep for ep, works in results.items() if works]
+        logger.info(f"Working endpoints found: {working_endpoints}")
+        
+        return results
